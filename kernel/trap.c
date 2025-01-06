@@ -77,8 +77,16 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
-    yield();
+  if(which_dev == 2) {
+      if (p->alarm_interval != 0 && --p->alarm_ticks <= 0 && p->alarm_goingoff == 0) {
+          // 是否设置了时钟 && 时钟倒计时是否结束 && 没有其他时钟正在运行
+          p->alarm_ticks = p->alarm_interval;
+          *p->alarm_trapframe = *p->trapframe;
+          p->trapframe->epc = (uint64)p->alarm_handler;
+          p->alarm_goingoff = 1;
+      }
+      yield();
+  }
 
   usertrapret();
 }
@@ -134,9 +142,9 @@ void
 kerneltrap()
 {
   int which_dev = 0;
-  uint64 sepc = r_sepc();
-  uint64 sstatus = r_sstatus();
-  uint64 scause = r_scause();
+  uint64 sepc = r_sepc();   // 保存当前的异常程序计数器
+  uint64 sstatus = r_sstatus();     // 保存当前的状态寄存器
+  uint64 scause = r_scause();       // 保存当前的异常原因
   
   if((sstatus & SSTATUS_SPP) == 0)
     panic("kerneltrap: not from supervisor mode");
@@ -144,6 +152,7 @@ kerneltrap()
     panic("kerneltrap: interrupts enabled");
 
   if((which_dev = devintr()) == 0){
+      // devintr()负责处理所有硬件设备相关的中断
     printf("scause %p\n", scause);
     printf("sepc=%p stval=%p\n", r_sepc(), r_stval());
     panic("kerneltrap");
@@ -217,4 +226,45 @@ devintr()
     return 0;
   }
 }
+
+int sigalarm(int ticks, void(*handler)()) {
+    struct proc* p = myproc();
+    p->alarm_interval = ticks;
+    p->alarm_handler = handler;
+    p->alarm_ticks = ticks;
+    return 0;
+}
+
+int sigreturn() {
+    struct proc* p = myproc();
+    *p->trapframe = *p->alarm_trapframe;
+    p->alarm_goingoff = 0;
+    return 0;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
