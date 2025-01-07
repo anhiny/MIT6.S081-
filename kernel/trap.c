@@ -67,7 +67,20 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
-  } else {
+  } else if (r_scause() == 13 || r_scause() == 15) {
+      uint64 va = r_stval();
+      if (is_cow_fault(p->pagetable, va)) {
+          if (cow_alloc(p->pagetable, va) < 0) {
+              printf("usertrap(): cow alloc failed\n");
+              p->killed = 1;
+          }
+      } else {
+          printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+          printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+          p->killed = 1;
+      }
+  }
+  else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     p->killed = 1;
@@ -148,7 +161,6 @@ kerneltrap()
     printf("sepc=%p stval=%p\n", r_sepc(), r_stval());
     panic("kerneltrap");
   }
-
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2 && myproc() != 0 && myproc()->state == RUNNING)
     yield();
